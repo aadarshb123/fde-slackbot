@@ -9,6 +9,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from app.config import SLACK_BOT_TOKEN, SLACK_APP_TOKEN, FDE_USER_ID
 from app.classifier import classify_message
 from app.database import store_message, message_exists
+from app.grouping import group_by_thread, group_by_similarity
 
 # Initialize Slack app
 app = App(token=SLACK_BOT_TOKEN)
@@ -101,8 +102,33 @@ def handle_message(message, client, logger):
         print(f"\n💾 Stored in database (ID: {message_id})")
         logger.info(f"Message stored in database: {message_id}")
 
+        # Group the message with related messages
+        print(f"\n🔍 Grouping message...")
+
+        # Strategy 1: Try thread-based grouping first (fast & deterministic)
+        group_id = group_by_thread(
+            message_id=message_id,
+            thread_ts=thread_ts,
+            category=classification['category'],
+            summary=classification['summary']
+        )
+
+        # Strategy 2: If not in thread, try semantic similarity grouping
+        if group_id is None and classification['is_relevant']:
+            group_id = group_by_similarity(
+                message_id=message_id,
+                message_text=text,
+                category=classification['category'],
+                summary=classification['summary']
+            )
+
+        if group_id:
+            logger.info(f"Message grouped: {group_id}")
+        else:
+            print(f"   ℹ️  No grouping applied")
+
     except Exception as e:
-        print(f"\n❌ Failed to store message: {e}")
+        print(f"\n❌ Failed to store/group message: {e}")
         logger.error(f"Database error: {e}")
 
     print(f"{'=' * 60}\n")
