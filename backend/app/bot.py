@@ -3,30 +3,34 @@ Main Slack bot application.
 Connects to Slack using Socket Mode and logs all incoming messages.
 """
 
+from datetime import datetime
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from app.config import SLACK_BOT_TOKEN, SLACK_APP_TOKEN, FDE_USER_ID
 from app.classifier import classify_message
+from app.database import store_message, message_exists
 
 # Initialize Slack app
 app = App(token=SLACK_BOT_TOKEN)
 
 
 @app.message("")
-def handle_message(message, logger):
+def handle_message(message, client, logger):
     """
     Handle all incoming messages.
 
     Flow:
     1. Filter out bot messages and FDE messages
     2. Classify customer messages using AI
-    3. Log classification results
+    3. Store classified messages in database
     """
     # Extract message data
-    user = message.get("user", "Unknown")
+    user_id = message.get("user", "Unknown")
     text = message.get("text", "")
-    channel = message.get("channel", "Unknown")
+    channel_id = message.get("channel", "Unknown")
     subtype = message.get("subtype")
+    slack_message_id = message.get("ts")
+    thread_ts = message.get("thread_ts")
 
     # Filter: Skip bot messages (edited, deleted, bot_message, etc.)
     if subtype is not None:
@@ -34,16 +38,36 @@ def handle_message(message, logger):
         return
 
     # Filter: Skip FDE messages
-    if user == FDE_USER_ID:
+    if user_id == FDE_USER_ID:
         logger.info(f"⊘ Skipping FDE message")
         return
+
+    # Check if message already exists (avoid duplicates)
+    if message_exists(slack_message_id):
+        logger.info(f"⊘ Message already processed: {slack_message_id}")
+        return
+
+    # Fetch user and channel names from Slack API
+    try:
+        user_info = client.users_info(user=user_id)
+        user_name = user_info["user"]["real_name"] or user_info["user"]["name"]
+    except Exception as e:
+        logger.warning(f"Could not fetch user name: {e}")
+        user_name = user_id
+
+    try:
+        channel_info = client.conversations_info(channel=channel_id)
+        channel_name = channel_info["channel"]["name"]
+    except Exception as e:
+        logger.warning(f"Could not fetch channel name: {e}")
+        channel_name = channel_id
 
     # Customer message - classify it
     print(f"\n{'=' * 60}")
     print(f"📨 Customer Message")
     print(f"{'=' * 60}")
-    print(f"User:    {user}")
-    print(f"Channel: {channel}")
+    print(f"User:    {user_name} ({user_id})")
+    print(f"Channel: #{channel_name} ({channel_id})")
     print(f"Text:    {text}")
 
     # Classify the message
@@ -56,12 +80,35 @@ def handle_message(message, logger):
     print(f"   Category:   {classification['category']}")
     print(f"   Confidence: {classification['confidence']}")
     print(f"   Summary:    {classification['summary']}")
+
+    # Store message in database
+    try:
+        # Convert Slack timestamp to datetime
+        timestamp = datetime.fromtimestamp(float(slack_message_id))
+
+        message_id = store_message(
+            slack_message_id=slack_message_id,
+            user_id=user_id,
+            user_name=user_name,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            text=text,
+            thread_ts=thread_ts,
+            timestamp=timestamp,
+            classification=classification
+        )
+
+        print(f"\n💾 Stored in database (ID: {message_id})")
+        logger.info(f"Message stored in database: {message_id}")
+
+    except Exception as e:
+        print(f"\n❌ Failed to store message: {e}")
+        logger.error(f"Database error: {e}")
+
     print(f"{'=' * 60}\n")
 
     # Log to Slack logger
     logger.info(f"Message classified: {classification['category']} (confidence: {classification['confidence']})")
-
-    # TODO: Next step - store in database and group with similar messages
 
 
 @app.error
