@@ -400,6 +400,145 @@ def update_issue_group_title(group_id: str, title: str) -> bool:
         return False
 
 
+def split_message_to_new_group(message_id: str, current_group_id: str) -> Optional[str]:
+    """
+    Split a message from its current group into a new group.
+
+    Args:
+        message_id: Message UUID to split out
+        current_group_id: Current group ID the message belongs to
+
+    Returns:
+        New group ID if successful, None otherwise
+
+    Use Case: FDE manually splits incorrectly grouped message
+    """
+    supabase = get_supabase_client()
+
+    try:
+        # Get the message details
+        message = get_message_by_id(message_id)
+        if not message:
+            print(f"❌ Message not found: {message_id}")
+            return None
+
+        # Create a new group for this message
+        new_group_id = create_issue_group(
+            title=f"{message['category'].title()}: {message['summary'][:50]}",
+            summary=message['summary'],
+            category=message['category']
+        )
+
+        # Remove message from old group
+        supabase.table('message_groups')\
+            .delete()\
+            .eq('message_id', message_id)\
+            .eq('group_id', current_group_id)\
+            .execute()
+
+        # Add message to new group
+        add_message_to_group(
+            message_id=message_id,
+            group_id=new_group_id,
+            similarity_score=1.0
+        )
+
+        print(f"✂️  Split message {message_id[:8]}... into new group {new_group_id[:8]}...")
+        return new_group_id
+
+    except Exception as e:
+        print(f"❌ Database error splitting message: {e}")
+        return None
+
+
+def merge_groups(source_group_id: str, target_group_id: str) -> bool:
+    """
+    Merge all messages from source group into target group.
+
+    Args:
+        source_group_id: Group to merge from (will be deleted)
+        target_group_id: Group to merge into (will remain)
+
+    Returns:
+        True if successful, False otherwise
+
+    Use Case: FDE manually merges related groups
+    """
+    supabase = get_supabase_client()
+
+    try:
+        # Get all messages in source group
+        source_messages = get_messages_in_group(source_group_id)
+
+        # Move each message to target group
+        for msg in source_messages:
+            # Remove from source group
+            supabase.table('message_groups')\
+                .delete()\
+                .eq('message_id', msg['id'])\
+                .eq('group_id', source_group_id)\
+                .execute()
+
+            # Add to target group
+            add_message_to_group(
+                message_id=msg['id'],
+                group_id=target_group_id,
+                similarity_score=msg.get('similarity_score', 1.0)
+            )
+
+        # Delete the source group
+        supabase.table('issue_groups')\
+            .delete()\
+            .eq('id', source_group_id)\
+            .execute()
+
+        print(f"🔀 Merged group {source_group_id[:8]}... into {target_group_id[:8]}...")
+        return True
+
+    except Exception as e:
+        print(f"❌ Database error merging groups: {e}")
+        return False
+
+
+def move_message_to_group(message_id: str, current_group_id: str, target_group_id: str) -> bool:
+    """
+    Move a message from one group to another existing group.
+
+    Args:
+        message_id: Message UUID to move
+        current_group_id: Current group ID
+        target_group_id: Target group ID to move to
+
+    Returns:
+        True if successful, False otherwise
+
+    Use Case: FDE manually reassigns message to different existing group
+    """
+    supabase = get_supabase_client()
+
+    try:
+        # Remove from current group
+        supabase.table('message_groups')\
+            .delete()\
+            .eq('message_id', message_id)\
+            .eq('group_id', current_group_id)\
+            .execute()
+
+        # Add to target group
+        add_message_to_group(
+            message_id=message_id,
+            group_id=target_group_id,
+            similarity_score=1.0
+        )
+
+        print(f"➡️  Moved message {message_id[:8]}... to group {target_group_id[:8]}...")
+        return True
+
+    except Exception as e:
+        print(f"❌ Database error moving message: {e}")
+        return False
+
+
 def get_issue_groups_by_category(category: str) -> list[Dict[str, Any]]:
     """
     Get all issue groups for a specific category.

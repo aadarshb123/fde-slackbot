@@ -25,6 +25,9 @@ export default function IssueModal({
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editedTitle, setEditedTitle] = useState(selectedGroup.title)
   const [isSavingTitle, setIsSavingTitle] = useState(false)
+  const [showMergeModal, setShowMergeModal] = useState(false)
+  const [availableGroups, setAvailableGroups] = useState<IssueGroup[]>([])
+  const [isMerging, setIsMerging] = useState(false)
 
   async function handleSaveTitle() {
     if (editedTitle.trim() === '' || editedTitle === selectedGroup.title) {
@@ -56,6 +59,115 @@ export default function IssueModal({
   function handleCancelEdit() {
     setEditedTitle(selectedGroup.title)
     setIsEditingTitle(false)
+  }
+
+  async function handleSplitMessage(messageId: string) {
+    if (!confirm('Split this message into a new ticket? This will create a separate issue group.')) {
+      return
+    }
+
+    try {
+      // Get message details to create new group
+      const message = groupMessages.find(m => m.id === messageId)
+      if (!message) return
+
+      // Create new group
+      const { data: newGroup, error: groupError } = await supabase
+        .from('issue_groups')
+        .insert({
+          title: `${message.category.charAt(0).toUpperCase() + message.category.slice(1)}: ${message.summary.slice(0, 50)}`,
+          summary: message.summary,
+          category: message.category,
+          status: 'open'
+        })
+        .select()
+        .single()
+
+      if (groupError) throw groupError
+
+      // Remove from current group
+      await supabase
+        .from('message_groups')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('group_id', selectedGroup.id)
+
+      // Add to new group
+      await supabase
+        .from('message_groups')
+        .insert({
+          message_id: messageId,
+          group_id: newGroup.id,
+          similarity_score: 1.0
+        })
+
+      // Close modal and let dashboard refresh
+      onClose()
+    } catch (error) {
+      console.error('Error splitting message:', error)
+      alert('Failed to split message. Please try again.')
+    }
+  }
+
+  async function handleOpenMergeModal() {
+    try {
+      const { data, error } = await supabase
+        .from('issue_groups')
+        .select('*')
+        .neq('id', selectedGroup.id)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+      setAvailableGroups(data || [])
+      setShowMergeModal(true)
+    } catch (error) {
+      console.error('Error fetching groups:', error)
+    }
+  }
+
+  async function handleMergeIntoGroup(targetGroupId: string) {
+    const targetGroup = availableGroups.find(g => g.id === targetGroupId)
+    if (!targetGroup) return
+
+    if (!confirm(`Merge ${groupMessages.length} message(s) into "${targetGroup.title}"?`)) {
+      return
+    }
+
+    setIsMerging(true)
+    try {
+      // Move all messages to target group
+      for (const msg of groupMessages) {
+        await supabase
+          .from('message_groups')
+          .delete()
+          .eq('message_id', msg.id)
+          .eq('group_id', selectedGroup.id)
+
+        await supabase
+          .from('message_groups')
+          .insert({
+            message_id: msg.id,
+            group_id: targetGroupId,
+            similarity_score: msg.similarity_score || 1.0
+          })
+      }
+
+      // Delete the current group
+      await supabase
+        .from('issue_groups')
+        .delete()
+        .eq('id', selectedGroup.id)
+
+      // Close modal
+      onClose()
+    } catch (error) {
+      console.error('Error merging groups:', error)
+      alert('Failed to merge groups. Please try again.')
+    } finally {
+      setIsMerging(false)
+    }
   }
 
   return (
@@ -144,6 +256,37 @@ export default function IssueModal({
             >
               <span>{selectedGroup.status === 'open' ? '✓' : '↻'}</span>
               <span>{selectedGroup.status === 'open' ? 'Mark Resolved' : 'Reopen'}</span>
+            </button>
+
+            <button
+              onClick={handleOpenMergeModal}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                backgroundColor: theme.accent + '20',
+                color: theme.accent,
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)'
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            >
+              <span>⇄</span>
+              <span>Merge</span>
             </button>
           </div>
 
@@ -313,17 +456,46 @@ export default function IssueModal({
                       #{message.channel_name}
                     </div>
                   </div>
-                  <div style={{
-                    fontSize: '13px',
-                    color: theme.textSecondary,
-                    fontWeight: '600'
-                  }}>
-                    {new Date(message.timestamp).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <div style={{
+                      fontSize: '13px',
+                      color: theme.textSecondary,
+                      fontWeight: '600'
+                    }}>
+                      {new Date(message.timestamp).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
+                    {groupMessages.length > 1 && (
+                      <button
+                        onClick={() => handleSplitMessage(message.id)}
+                        title="Split into new ticket"
+                        style={{
+                          padding: '4px 8px',
+                          backgroundColor: 'transparent',
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '6px',
+                          color: theme.textSecondary,
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = theme.accent
+                          e.currentTarget.style.color = theme.accent
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = theme.border
+                          e.currentTarget.style.color = theme.textSecondary
+                        }}
+                      >
+                        ↗ Split
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -403,6 +575,118 @@ export default function IssueModal({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Merge Modal */}
+        {showMergeModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowMergeModal(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                backgroundColor: theme.cardBg,
+                padding: '32px',
+                borderRadius: '16px',
+                maxWidth: '600px',
+                width: '90%',
+                maxHeight: '70vh',
+                overflow: 'auto',
+                border: `1px solid ${theme.border}`
+              }}
+            >
+              <h3 style={{
+                fontSize: '24px',
+                fontWeight: '700',
+                color: theme.text,
+                marginBottom: '16px'
+              }}>
+                Merge into another ticket
+              </h3>
+              <p style={{
+                fontSize: '14px',
+                color: theme.textSecondary,
+                marginBottom: '24px'
+              }}>
+                Select a ticket to merge {groupMessages.length} message(s) into. The current ticket will be deleted.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {availableGroups.map((group) => (
+                  <div
+                    key={group.id}
+                    onClick={() => handleMergeIntoGroup(group.id)}
+                    style={{
+                      padding: '16px',
+                      backgroundColor: darkMode ? '#1E293B' : '#F8FAFC',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      cursor: isMerging ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s ease',
+                      opacity: isMerging ? 0.5 : 1
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isMerging) {
+                        e.currentTarget.style.borderColor = theme.accent
+                        e.currentTarget.style.backgroundColor = theme.accent + '10'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isMerging) {
+                        e.currentTarget.style.borderColor = theme.border
+                        e.currentTarget.style.backgroundColor = darkMode ? '#1E293B' : '#F8FAFC'
+                      }
+                    }}
+                  >
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      color: theme.text,
+                      marginBottom: '4px'
+                    }}>
+                      {truncateTitle(group.title, 12).truncated}
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: theme.textSecondary
+                    }}>
+                      {group.category} • {new Date(group.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setShowMergeModal(false)}
+                disabled={isMerging}
+                style={{
+                  marginTop: '24px',
+                  padding: '12px 24px',
+                  backgroundColor: 'transparent',
+                  color: theme.text,
+                  border: `2px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  cursor: isMerging ? 'not-allowed' : 'pointer',
+                  width: '100%'
+                }}
+              >
+                {isMerging ? 'Merging...' : 'Cancel'}
+              </button>
+            </div>
           </div>
         )}
 
