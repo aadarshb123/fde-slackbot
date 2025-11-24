@@ -126,6 +126,7 @@ Required variables:
 # Slack
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_APP_TOKEN=xapp-your-app-token
+FDE_USER_ID=your-slack-user-id  # Get: Profile → More → Copy member ID
 
 # OpenAI
 OPENAI_API_KEY=sk-your-openai-key
@@ -136,6 +137,10 @@ SUPABASE_KEY=your-anon-key
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
+
+**Getting your FDE_USER_ID:**
+- In Slack: Click your profile picture → Profile → ⋮ More → Copy member ID
+- Format looks like: `U12345ABCDE`
 
 ### 5. Run the App
 
