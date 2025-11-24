@@ -10,6 +10,9 @@ import CombinedFilters from './components/CombinedFilters'
 import IssueCard from './components/IssueCard'
 import IssueModal from './components/IssueModal'
 import ToastContainer from './components/ToastContainer'
+import Pagination from './components/Pagination'
+
+const ITEMS_PER_PAGE = 12
 
 export default function Dashboard() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('all')
@@ -17,6 +20,7 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGroup, setSelectedGroup] = useState<IssueGroup | null>(null)
   const [darkMode, setDarkMode] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   const { toasts, showToast, dismissToast } = useToasts()
   const { issueGroups, loading, error, messageCounts, toggleGroupStatus } = useIssueGroups(showToast)
@@ -49,6 +53,28 @@ export default function Dashboard() {
     selectedTimeFilter,
     searchQuery
   )
+
+  // Calculate pagination
+  const totalItems = filteredGroups.length
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedGroups = filteredGroups.slice(startIndex, endIndex)
+
+  // Reset to page 1 when filters change
+  function handleCategoryChange(category: CategoryFilter) {
+    setSelectedCategory(category)
+    setCurrentPage(1)
+  }
+
+  function handleTimeFilterChange(filter: TimeFilter) {
+    setSelectedTimeFilter(filter)
+    setCurrentPage(1)
+  }
+
+  function handleSearchChange(query: string) {
+    setSearchQuery(query)
+    setCurrentPage(1)
+  }
 
   if (loading) {
     return (
@@ -108,7 +134,7 @@ export default function Dashboard() {
           searchQuery={searchQuery}
           darkMode={darkMode}
           theme={theme}
-          onSearchChange={setSearchQuery}
+          onSearchChange={handleSearchChange}
         />
 
         <CombinedFilters
@@ -117,8 +143,8 @@ export default function Dashboard() {
           issueGroups={issueGroups}
           darkMode={darkMode}
           theme={theme}
-          onCategoryChange={setSelectedCategory}
-          onTimeFilterChange={setSelectedTimeFilter}
+          onCategoryChange={handleCategoryChange}
+          onTimeFilterChange={handleTimeFilterChange}
         />
 
         {/* Issue Groups */}
@@ -127,7 +153,7 @@ export default function Dashboard() {
           gap: '24px',
           gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))'
         }}>
-          {filteredGroups.map((group) => (
+          {paginatedGroups.map((group) => (
             <IssueCard
               key={group.id}
               group={group}
@@ -149,6 +175,16 @@ export default function Dashboard() {
           }}>
             No {selectedCategory !== 'all' ? selectedCategory : ''} issues found
           </div>
+        )}
+
+        {filteredGroups.length > 0 && (
+          <Pagination
+            currentPage={currentPage}
+            totalItems={totalItems}
+            itemsPerPage={ITEMS_PER_PAGE}
+            theme={theme}
+            onPageChange={setCurrentPage}
+          />
         )}
 
         {selectedGroup && (
