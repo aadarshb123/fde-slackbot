@@ -373,6 +373,33 @@ def update_issue_group_status(group_id: str, status: str) -> bool:
         return False
 
 
+def update_issue_group_title(group_id: str, title: str) -> bool:
+    """
+    Update the title of an issue group.
+
+    Args:
+        group_id: Issue group UUID
+        title: New title string
+
+    Returns:
+        True if successful, False otherwise
+
+    Use Case: Manual FDE editing of group titles
+    """
+    supabase = get_supabase_client()
+
+    try:
+        supabase.table('issue_groups')\
+            .update({'title': title})\
+            .eq('id', group_id)\
+            .execute()
+        return True
+
+    except Exception as e:
+        print(f"❌ Database error updating issue group title: {e}")
+        return False
+
+
 def get_issue_groups_by_category(category: str) -> list[Dict[str, Any]]:
     """
     Get all issue groups for a specific category.

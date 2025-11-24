@@ -1,5 +1,5 @@
 import type { IssueGroup, Theme } from '../types'
-import { getCategoryColor } from '../utils'
+import { getCategoryColor, truncateTitle } from '../utils'
 
 interface IssueCardProps {
   group: IssueGroup
@@ -80,14 +80,18 @@ export default function IssueCard({
         )}
       </div>
 
-      <h3 style={{
-        fontSize: '20px',
-        fontWeight: '700',
-        color: theme.text,
-        margin: '0 0 12px 0',
-        lineHeight: '1.4'
-      }}>
-        {group.title}
+      <h3
+        title={group.title}
+        style={{
+          fontSize: '20px',
+          fontWeight: '700',
+          color: theme.text,
+          margin: '0 0 12px 0',
+          lineHeight: '1.4',
+          cursor: 'default'
+        }}
+      >
+        {truncateTitle(group.title, 8).truncated}
       </h3>
 
       <p style={{

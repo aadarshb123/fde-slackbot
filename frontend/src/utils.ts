@@ -60,3 +60,14 @@ export function filterIssueGroups(
 export function getSlackLink(channelId: string, timestamp: string): string {
   return `https://slack.com/app_redirect?channel=${channelId}&message_ts=${timestamp}`
 }
+
+export function truncateTitle(title: string, maxWords: number = 8): { truncated: string; isTruncated: boolean } {
+  const words = title.split(' ')
+  if (words.length <= maxWords) {
+    return { truncated: title, isTruncated: false }
+  }
+  return {
+    truncated: words.slice(0, maxWords).join(' ') + '...',
+    isTruncated: true
+  }
+}

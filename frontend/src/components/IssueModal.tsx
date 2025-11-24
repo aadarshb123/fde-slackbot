@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import type { IssueGroup, Message, Theme } from '../types'
 import { getCategoryColor, getSlackLink } from '../utils'
+import { supabase } from '../supabaseClient'
 
 interface IssueModalProps {
   selectedGroup: IssueGroup
@@ -20,6 +22,42 @@ export default function IssueModal({
   onClose,
   onToggleStatus
 }: IssueModalProps) {
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [editedTitle, setEditedTitle] = useState(selectedGroup.title)
+  const [isSavingTitle, setIsSavingTitle] = useState(false)
+
+  async function handleSaveTitle() {
+    if (editedTitle.trim() === '' || editedTitle === selectedGroup.title) {
+      setIsEditingTitle(false)
+      setEditedTitle(selectedGroup.title)
+      return
+    }
+
+    setIsSavingTitle(true)
+    try {
+      const { error } = await supabase
+        .from('issue_groups')
+        .update({ title: editedTitle.trim() })
+        .eq('id', selectedGroup.id)
+
+      if (error) throw error
+
+      // Update local state
+      selectedGroup.title = editedTitle.trim()
+      setIsEditingTitle(false)
+    } catch (error) {
+      console.error('Error updating title:', error)
+      setEditedTitle(selectedGroup.title) // Revert on error
+    } finally {
+      setIsSavingTitle(false)
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditedTitle(selectedGroup.title)
+    setIsEditingTitle(false)
+  }
+
   return (
     <div
       onClick={onClose}
@@ -109,15 +147,93 @@ export default function IssueModal({
             </button>
           </div>
 
-          <h2 style={{
-            fontSize: '32px',
-            fontWeight: '800',
-            color: theme.text,
-            margin: '0 0 12px 0',
-            lineHeight: '1.3'
-          }}>
-            {selectedGroup.title}
-          </h2>
+          {isEditingTitle ? (
+            <div style={{ marginBottom: '12px' }}>
+              <input
+                type="text"
+                value={editedTitle}
+                onChange={(e) => setEditedTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveTitle()
+                  if (e.key === 'Escape') handleCancelEdit()
+                }}
+                autoFocus
+                style={{
+                  width: '100%',
+                  fontSize: '32px',
+                  fontWeight: '800',
+                  color: theme.text,
+                  backgroundColor: darkMode ? '#1E293B' : '#F8FAFC',
+                  border: `2px solid ${theme.accent}`,
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                  marginBottom: '8px',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={handleSaveTitle}
+                  disabled={isSavingTitle}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: theme.accent,
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    cursor: isSavingTitle ? 'not-allowed' : 'pointer',
+                    opacity: isSavingTitle ? 0.6 : 1
+                  }}
+                >
+                  {isSavingTitle ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isSavingTitle}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    border: `2px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    cursor: isSavingTitle ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <h2
+              onClick={() => setIsEditingTitle(true)}
+              style={{
+                fontSize: '32px',
+                fontWeight: '800',
+                color: theme.text,
+                margin: '0 0 12px 0',
+                lineHeight: '1.3',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '4px',
+                transition: 'background-color 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = theme.hover
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+              }}
+              title="Click to edit title"
+            >
+              {selectedGroup.title}
+            </h2>
+          )}
 
           <p style={{
             fontSize: '16px',
