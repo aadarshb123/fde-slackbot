@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { IssueGroup, Message, Theme } from '../types'
-import { getCategoryColor, getSlackLink } from '../utils'
+import { getCategoryColor, getSlackLink, truncateTitle } from '../utils'
 import { supabase } from '../supabaseClient'
 
 interface IssueModalProps {
