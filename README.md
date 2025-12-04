@@ -2,9 +2,6 @@
 
 AI-powered Slack bot that monitors customer messages, classifies issues using GPT-4, and groups them into actionable tickets with a real-time dashboard.
 
-<img width="740" height="740" alt="Screenshot 2025-11-25 at 4 46 25 PM" src="https://github.com/user-attachments/assets/5b443113-13b9-442d-adf7-5634de2cc81d" />
-
-
 ## Quick Start
 
 ### Prerequisites
